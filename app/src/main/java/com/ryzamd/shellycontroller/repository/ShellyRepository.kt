@@ -11,10 +11,18 @@ import javax.inject.Singleton
 class ShellyRepository @Inject constructor(private val mqttManager: MqttManager) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun setSwitchState(switchId: Int, on: Boolean): Result<Boolean> {
+    suspend fun setSwitchState(
+        deviceId: String,
+        switchId: Int,
+        on: Boolean
+    ): Result<Boolean> {
         return try {
             val params = SwitchSetParams(id = switchId, on = on)
-            val response = mqttManager.sendRpcCommand("Switch.Set", params)
+            val response = mqttManager.sendRpcCommand(
+                deviceId = deviceId,
+                method = "Switch.Set",
+                params = params
+            )
 
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
@@ -29,17 +37,41 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
         }
     }
 
-    suspend fun getSwitchStatus(switchId: Int): Result<Boolean> {
+    suspend fun getSwitchStatus(
+        deviceId: String,
+        switchId: Int
+    ): Result<Boolean> {
         return try {
             val params = mapOf("id" to switchId)
-            val response = mqttManager.sendRpcCommand("Switch.GetStatus", params)
+            val response = mqttManager.sendRpcCommand(
+                deviceId = deviceId,
+                method = "Switch.GetStatus",
+                params = params
+            )
 
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
             } else {
-                // Parse output from result
                 val output = response.result?.toString()?.contains("\"output\":true") ?: false
                 Result.success(output)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getDeviceInfo(deviceId: String): Result<String> {
+        return try {
+            val response = mqttManager.sendRpcCommand(
+                deviceId = deviceId,
+                method = "Shelly.GetDeviceInfo",
+                params = null
+            )
+
+            if (response.error != null) {
+                Result.failure(Exception(response.error.message))
+            } else {
+                Result.success(response.result?.toString() ?: "")
             }
         } catch (e: Exception) {
             Result.failure(e)

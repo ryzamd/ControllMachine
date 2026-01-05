@@ -1,86 +1,238 @@
-package com.ryzamd.shellycontroller.ui.dashboard
+﻿package com.ryzamd.shellycontroller.ui.dashboard
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(onNavigateToSettings: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
+fun DashboardScreen(
+    onNavigateToSettings: () -> Unit,
+    viewModel: DashboardViewModel = hiltViewModel()
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Shelly Controller") },
+                title = { 
+                    Column {
+                        Text("Shelly Controller")
+                        Text(
+                            text = if (uiState.isBrokerConnected) "Connected" else "Disconnected",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (uiState.isBrokerConnected) 
+                                MaterialTheme.colorScheme.primary 
+                            else 
+                                MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
                 actions = {
+                    IconButton(onClick = { viewModel.refreshDiscovery() }) {
+                        Icon(Icons.Default.Refresh, "Refresh")
+                    }
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, "Settings")
                     }
                 }
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Connection Status
-            ConnectionStatusCard(isConnected = uiState.isConnected)
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Switch Control
-            SwitchControlCard(
-                isOn = uiState.isSwitchOn,
-                isLoading = uiState.isLoading,
-                onToggle = { viewModel.toggleSwitch() }
+        if (!uiState.isBrokerConnected) {
+            EmptyStateView(
+                modifier = Modifier.padding(padding),
+                message = "Not connected to MQTT broker",
+                icon = Icons.Default.Warning,  // Changed
+                actionText = "Configure",
+                onAction = onNavigateToSettings
             )
+        } else if (uiState.devices.isEmpty()) {
+            EmptyStateView(
+                modifier = Modifier.padding(padding),
+                message = "No Shelly devices found\n\nMake sure devices are:\n• Powered on\n• Connected to WiFi\n• MQTT configured",
+                icon = Icons.Default.Star  // Changed
+            )
+        } else {
+            DeviceList(
+                modifier = Modifier.padding(padding),
+                devices = uiState.devices,
+                onToggleSwitch = { viewModel.toggleSwitch(it) },
+                onConnectDevice = { viewModel.connectDevice(it.deviceId) },
+                onDeleteDevice = { viewModel.deleteDevice(it.deviceId) }
+            )
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+@Composable
+private fun DeviceList(
+    modifier: Modifier = Modifier,
+    devices: List<ShellyDeviceUiState>,
+    onToggleSwitch: (ShellyDeviceUiState) -> Unit,
+    onConnectDevice: (ShellyDeviceUiState) -> Unit,
+    onDeleteDevice: (ShellyDeviceUiState) -> Unit
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(devices, key = { it.deviceId }) { device ->
+            DeviceCard(
+                device = device,
+                onToggleSwitch = { onToggleSwitch(device) },
+                onConnect = { onConnectDevice(device) },
+                onDelete = { onDeleteDevice(device) }
+            )
+        }
+    }
+}
 
-            // Refresh Button
-            OutlinedButton(
-                onClick = { viewModel.getSwitchStatus() },
-                enabled = uiState.isConnected && !uiState.isLoading
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DeviceCard(
+    device: ShellyDeviceUiState,
+    onToggleSwitch: () -> Unit,
+    onConnect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (device.isSaved) 
+                MaterialTheme.colorScheme.surfaceVariant 
+            else 
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
-                Text("Refresh Status")
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                !device.isOnline -> Color.Gray
+                                device.isSwitchOn -> Color(0xFF4CAF50)
+                                else -> Color(0xFFFF9800)
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AddCircle,  // Changed
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column {
+                    Text(
+                        text = device.displayName,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (device.isOnline) Icons.Default.CheckCircle else Icons.Default.Clear,  // Changed
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = if (device.isOnline) Color(0xFF4CAF50) else Color.Red
+                        )
+                        Text(
+                            text = when {
+                                !device.isSaved -> "New Device"
+                                !device.isOnline -> "Offline"
+                                device.isSwitchOn -> "ON"
+                                else -> "OFF"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = device.deviceId,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
             }
 
-            // Error Display
-            uiState.error?.let { error ->
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
+            if (device.isSaved) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Error",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        TextButton(onClick = { viewModel.clearError() }) {
-                            Text("Dismiss")
+                    Switch(
+                        checked = device.isSwitchOn,
+                        onCheckedChange = { onToggleSwitch() },
+                        enabled = device.isOnline
+                    )
+                    
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, "Menu")
                         }
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Delete") },
+                                onClick = {
+                                    onDelete()
+                                    showMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, null)
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (device.isConnecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 3.dp
+                    )
+                } else {
+                    FilledTonalButton(
+                        onClick = onConnect,
+                        enabled = device.isOnline
+                    ) {
+                        Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(18.dp))  // Changed
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Connect")
                     }
                 }
             }
@@ -89,76 +241,36 @@ fun DashboardScreen(onNavigateToSettings: () -> Unit, viewModel: DashboardViewMo
 }
 
 @Composable
-fun ConnectionStatusCard(isConnected: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isConnected)
-                MaterialTheme.colorScheme.primaryContainer
-            else
-                MaterialTheme.colorScheme.errorContainer
-        )
+private fun EmptyStateView(
+    modifier: Modifier = Modifier,
+    message: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .padding(end = 8.dp)
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = if (isConnected)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.error
-                ) {
-                    Spacer(modifier = Modifier.size(12.dp))
-                }
-            }
-            Text(
-                text = if (isConnected) "Connected to Broker" else "Disconnected",
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-    }
-}
-
-@Composable
-fun SwitchControlCard(isOn: Boolean, isLoading: Boolean, onToggle: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "Relay Switch",
-                style = MaterialTheme.typography.headlineSmall
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             Text(
-                text = if (isOn) "ON" else "OFF",
-                style = MaterialTheme.typography.displayMedium,
-                color = if (isOn)
-                    MaterialTheme.colorScheme.primary
-                else
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            if (isLoading) {
-                CircularProgressIndicator()
-            } else {
-                FilledTonalButton(
-                    onClick = onToggle,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(if (isOn) "Turn OFF" else "Turn ON")
+            if (actionText != null && onAction != null) {
+                Button(onClick = onAction) {
+                    Text(actionText)
                 }
             }
         }

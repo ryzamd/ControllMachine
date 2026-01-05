@@ -32,7 +32,7 @@ enum class MqttConnectionState {
 }
 
 @Singleton
-class MqttManager @Inject constructor() {
+class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscoveryManager) {
 
     private var client: Mqtt5AsyncClient? = null
     private val json = Json { ignoreUnknownKeys = true }
@@ -46,19 +46,20 @@ class MqttManager @Inject constructor() {
     val deviceNotifications: SharedFlow<String> = _deviceNotifications.asSharedFlow()
 
     private var currentConfig: BrokerConfig? = null
+    private val clientId = "android_app_`${UUID.randomUUID()}"
+
+    val discoveredDevices = discoveryManager.discoveredDevices
 
     suspend fun connect(config: BrokerConfig) = suspendCancellableCoroutine { continuation ->
         try {
             _connectionState.value = MqttConnectionState.CONNECTING
             currentConfig = config
 
-            // Disconnect old client
             client?.disconnect()
 
-            // Create new client
             client = MqttClient.builder()
                 .useMqttVersion5()
-                .identifier(UUID.randomUUID().toString())
+                .identifier(clientId)
                 .serverHost(config.host)
                 .serverPort(config.port)
                 .simpleAuth()
@@ -71,7 +72,10 @@ class MqttManager @Inject constructor() {
             client?.connect()?.whenComplete { _, throwable ->
                 if (throwable == null) {
                     _connectionState.value = MqttConnectionState.CONNECTED
-                    subscribeToTopics(config)
+                    subscribeToTopics()
+
+                    client?.let { discoveryManager.startDiscovery(it) }
+
                     Log.d("MqttManager", "Connected successfully")
                     continuation.resume(Unit)
                 } else {
@@ -86,43 +90,41 @@ class MqttManager @Inject constructor() {
         }
     }
 
-    private fun subscribeToTopics(config: BrokerConfig) {
-        val clientId = config.clientId
-
-        // Subscribe to response channel
+    private fun subscribeToTopics() {
         client?.subscribeWith()
-            ?.topicFilter("$clientId/rpc")
+            ?.topicFilter("`$clientId/rpc")
             ?.callback { publish -> handleRpcResponse(publish) }
             ?.send()
 
-        // Subscribe to notification channel
+        Log.d("MqttManager", "Subscribed to `$clientId/rpc")
+    }
+
+    fun subscribeToDevice(deviceId: String) {
         client?.subscribeWith()
-            ?.topicFilter("${config.deviceId}/events/rpc")
+            ?.topicFilter("`$deviceId/events/rpc")
             ?.callback { publish -> handleNotification(publish) }
             ?.send()
 
-        // Subscribe to status channel
         client?.subscribeWith()
-            ?.topicFilter("${config.deviceId}/status/switch:0")
+            ?.topicFilter("`$deviceId/status/switch:0")
             ?.callback { publish -> handleNotification(publish) }
             ?.send()
 
-        // Subscribe to online status
         client?.subscribeWith()
-            ?.topicFilter("${config.deviceId}/online")
+            ?.topicFilter("`$deviceId/online")
             ?.callback { publish ->
                 val online = String(publish.payloadAsBytes)
-                Log.d("MqttManager", "Device online: $online")
+                Log.d("MqttManager", "Device `$deviceId online: `$online")
             }
             ?.send()
 
-        Log.d("MqttManager", "Subscribed to topics for device: ${config.deviceId}")
+        Log.d("MqttManager", "Subscribed to device: `$deviceId")
     }
 
     private fun handleRpcResponse(publish: Mqtt5Publish) {
         try {
             val payload = String(publish.payloadAsBytes)
-            Log.d("MqttManager", "RPC Response: $payload")
+            Log.d("MqttManager", "RPC Response: `$payload")
 
             val response = json.decodeFromString<JsonRpcResponse<JsonElement>>(payload)
 
@@ -136,7 +138,7 @@ class MqttManager @Inject constructor() {
     private fun handleNotification(publish: Mqtt5Publish) {
         try {
             val payload = String(publish.payloadAsBytes)
-            Log.d("MqttManager", "Notification: $payload")
+            Log.d("MqttManager", "Notification: `$payload")
 
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
                 _deviceNotifications.emit(value = payload)
@@ -146,8 +148,12 @@ class MqttManager @Inject constructor() {
         }
     }
 
-    suspend fun sendRpcCommand(method: String, params: Any, timeout: Long = 5000): JsonRpcResponse<JsonElement> {
-        val config = currentConfig ?: throw IllegalStateException("Not connected")
+    suspend fun sendRpcCommand(
+        deviceId: String,
+        method: String,
+        params: Any?,
+        timeout: Long = 5000
+    ): JsonRpcResponse<JsonElement> {
         val requestId = (1..1000000).random()
         val deferred = CompletableDeferred<JsonRpcResponse<JsonElement>>()
 
@@ -155,18 +161,17 @@ class MqttManager @Inject constructor() {
 
         val request = JsonRpcRequest(
             id = requestId,
-            src = config.clientId,
+            src = clientId,
             method = method,
-            params = json.encodeToJsonElement(
-                kotlinx.serialization.serializer(),
-                params
-            )
+            params = params?.let {
+                json.encodeToJsonElement(kotlinx.serialization.serializer(), it)
+            }
         )
 
-        val topic = "${config.deviceId}/rpc"
+        val topic = "`$deviceId/rpc"
         val payload = json.encodeToString(JsonRpcRequest.serializer(), request).toByteArray()
 
-        Log.d("MqttManager", "Sending RPC: $method to $topic")
+        Log.d("MqttManager", "Sending RPC: `$method to `$deviceId")
 
         client?.publishWith()
             ?.topic(topic)
@@ -179,7 +184,7 @@ class MqttManager @Inject constructor() {
             }
         } catch (e: TimeoutCancellationException) {
             pendingRequests.remove(requestId)
-            throw Exception("Request timeout")
+            throw Exception("Request timeout for device `$deviceId")
         }
     }
 
