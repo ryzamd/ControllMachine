@@ -20,6 +20,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -34,10 +35,10 @@ enum class MqttConnectionState {
 @Singleton
 class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscoveryManager) {
 
-    private var client: Mqtt5AsyncClient? = null
-    private val json = Json { ignoreUnknownKeys = true }
+    var client: Mqtt5AsyncClient? = null
+    public val json = Json { ignoreUnknownKeys = true }
 
-    private val pendingRequests = ConcurrentHashMap<Int, CompletableDeferred<JsonRpcResponse<JsonElement>>>()
+    val pendingRequests = ConcurrentHashMap<Int, CompletableDeferred<JsonRpcResponse<JsonElement>>>()
 
     private val _connectionState = MutableStateFlow(MqttConnectionState.DISCONNECTED)
     val connectionState: StateFlow<MqttConnectionState> = _connectionState.asStateFlow()
@@ -46,7 +47,7 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
     val deviceNotifications: SharedFlow<String> = _deviceNotifications.asSharedFlow()
 
     private var currentConfig: BrokerConfig? = null
-    private val clientId = "android_app_`${UUID.randomUUID()}"
+    public val clientId = "android_app_`${UUID.randomUUID()}"
 
     val discoveredDevices = discoveryManager.discoveredDevices
 
@@ -92,7 +93,7 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
 
     private fun subscribeToTopics() {
         client?.subscribeWith()
-            ?.topicFilter("`$clientId/rpc")
+            ?.topicFilter("$clientId/rpc")
             ?.callback { publish -> handleRpcResponse(publish) }
             ?.send()
 
@@ -111,7 +112,7 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
             ?.send()
 
         client?.subscribeWith()
-            ?.topicFilter("`$deviceId/online")
+            ?.topicFilter("$deviceId/online")
             ?.callback { publish ->
                 val online = String(publish.payloadAsBytes)
                 Log.d("MqttManager", "Device `$deviceId online: `$online")
@@ -148,10 +149,10 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
         }
     }
 
-    suspend fun sendRpcCommand(
+    suspend inline fun <reified T> sendRpcCommand(
         deviceId: String,
         method: String,
-        params: Any?,
+        params: T?,
         timeout: Long = 5000
     ): JsonRpcResponse<JsonElement> {
         val requestId = (1..1000000).random()
@@ -163,15 +164,14 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
             id = requestId,
             src = clientId,
             method = method,
-            params = params?.let {
-                json.encodeToJsonElement(kotlinx.serialization.serializer(), it)
-            }
+            params = params?.let { json.encodeToJsonElement(it) }
         )
 
-        val topic = "`$deviceId/rpc"
+        val topic = "$deviceId/rpc"
         val payload = json.encodeToString(JsonRpcRequest.serializer(), request).toByteArray()
 
-        Log.d("MqttManager", "Sending RPC: `$method to `$deviceId")
+        Log.d("MqttManager", "Sending RPC: $method to $deviceId")
+        Log.d("MqttManager", "Payload: ${String(payload)}")
 
         client?.publishWith()
             ?.topic(topic)
@@ -184,7 +184,7 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
             }
         } catch (e: TimeoutCancellationException) {
             pendingRequests.remove(requestId)
-            throw Exception("Request timeout for device `$deviceId")
+            throw Exception("Request timeout for device $deviceId")
         }
     }
 

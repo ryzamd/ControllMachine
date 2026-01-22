@@ -27,9 +27,6 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
             } else {
-                val result = response.result?.let {
-                    json.decodeFromJsonElement(SwitchSetResult.serializer(), it)
-                }
                 Result.success(on)
             }
         } catch (e: Exception) {
@@ -37,10 +34,7 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
         }
     }
 
-    suspend fun getSwitchStatus(
-        deviceId: String,
-        switchId: Int
-    ): Result<Boolean> {
+    suspend fun getSwitchStatus(deviceId: String, switchId: Int): Result<Boolean> {
         return try {
             val params = mapOf("id" to switchId)
             val response = mqttManager.sendRpcCommand(
@@ -62,7 +56,7 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
 
     suspend fun getDeviceInfo(deviceId: String): Result<String> {
         return try {
-            val response = mqttManager.sendRpcCommand(
+            val response = mqttManager.sendRpcCommand<Map<String, Any>>(
                 deviceId = deviceId,
                 method = "Shelly.GetDeviceInfo",
                 params = null

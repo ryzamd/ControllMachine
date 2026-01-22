@@ -1,7 +1,9 @@
 ﻿package com.ryzamd.shellycontroller.ui.dashboard
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ryzamd.shellycontroller.data.local.BrokerConfigRepository
 import com.ryzamd.shellycontroller.data.local.SavedDevice
 import com.ryzamd.shellycontroller.data.local.SavedDeviceDao
 import com.ryzamd.shellycontroller.data.remote.DeviceDiscoveryManager
@@ -34,7 +36,8 @@ class DashboardViewModel @Inject constructor(
     private val mqttManager: MqttManager,
     private val discoveryManager: DeviceDiscoveryManager,
     private val savedDeviceDao: SavedDeviceDao,
-    private val shellyRepository: ShellyRepository
+    private val shellyRepository: ShellyRepository,
+    private val configRepo: BrokerConfigRepository
 ) : ViewModel() {
 
     private val savedDevicesFlow = savedDeviceDao.getAllDevices()
@@ -71,6 +74,7 @@ class DashboardViewModel @Inject constructor(
 
     init {
         observeDeviceStatusUpdates()
+        connectToBroker()
     }
 
     private fun mergeDeviceLists(
@@ -141,29 +145,44 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun toggleSwitch(device: ShellyDeviceUiState) {
+        Log.d("DashboardViewModel", "Toggle: deviceId=${device.deviceId}, current=${device.isSwitchOn}, sending=${!device.isSwitchOn}")
+
         if (!device.isSaved || !device.isOnline) return
 
         viewModelScope.launch {
             try {
-                shellyRepository.setSwitchState(
+                val newState = !device.isSwitchOn
+                Log.d("DashboardViewModel", "Calling setSwitchState with on=$newState")
+
+                val result = shellyRepository.setSwitchState(
                     deviceId = device.deviceId,
                     switchId = 0,
-                    on = !device.isSwitchOn
+                    on = newState
                 )
+
+                result.onSuccess {
+                    val currentStates = _switchStates.value.toMutableMap()
+                    currentStates[device.deviceId] = newState
+                    _switchStates.value = currentStates
+                    Log.d("DashboardViewModel", "Updated state to $newState")
+                }
             } catch (e: Exception) {
-                // Handle error
+                Log.e("DashboardViewModel", "Toggle failed", e)
             }
         }
     }
 
     fun connectDevice(deviceId: String) {
+        Log.d("DashboardViewModel", "🔵 connectDevice called for: $deviceId")
         viewModelScope.launch {
-            _connectingDevices.value = _connectingDevices.value + deviceId
+            _connectingDevices.value += _connectingDevices.value + deviceId
 
             try {
+                Log.d("DashboardViewModel", "📡 Calling getSwitchStatus...")
                 val status = shellyRepository.getSwitchStatus(deviceId, 0)
 
                 status.onSuccess { isOn ->
+                    Log.d("DashboardViewModel", "✅ Got status: $isOn")
                     val displayName = extractDeviceModel(deviceId)
                     savedDeviceDao.insertDevice(
                         SavedDevice(
@@ -175,11 +194,13 @@ class DashboardViewModel @Inject constructor(
                     val currentStates = _switchStates.value.toMutableMap()
                     currentStates[deviceId] = isOn
                     _switchStates.value = currentStates
+                }.onFailure { e ->
+                    Log.e("DashboardViewModel", "❌ Failed: ${e.message}", e)
                 }
             } catch (e: Exception) {
-                // Connection failed
+                Log.e("DashboardViewModel", "💥 Exception: ${e.message}", e)
             } finally {
-                _connectingDevices.value = _connectingDevices.value - deviceId
+                _connectingDevices.value += _connectingDevices.value - deviceId
             }
         }
     }
@@ -198,5 +219,17 @@ class DashboardViewModel @Inject constructor(
 
     fun refreshDiscovery() {
         discoveryManager.clearDevices()
+    }
+
+    private fun connectToBroker() {
+        viewModelScope.launch {
+            configRepo.brokerConfig.collectLatest { config ->
+                try {
+                    mqttManager.connect(config)
+                } catch (e: Exception) {
+                    // Handle connection error
+                }
+            }
+        }
     }
 }
