@@ -1,4 +1,6 @@
-﻿package com.ryzamd.shellycontroller.ui.dashboard
+﻿@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.ryzamd.shellycontroller.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -32,12 +34,17 @@ fun DashboardScreen(
                     Column {
                         Text("Shelly Controller")
                         Text(
-                            text = if (uiState.isBrokerConnected) "Connected" else "Disconnected",
+                            text = when {
+                                uiState.isConnecting -> "Connecting..."
+                                uiState.isBrokerConnected -> "Connected"
+                                else -> "Disconnected"
+                            },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (uiState.isBrokerConnected) 
-                                MaterialTheme.colorScheme.primary 
-                            else 
-                                MaterialTheme.colorScheme.error
+                            color = when {
+                                uiState.isConnecting -> MaterialTheme.colorScheme.tertiary
+                                uiState.isBrokerConnected -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.error
+                            }
                         )
                     }
                 },
@@ -52,28 +59,52 @@ fun DashboardScreen(
             )
         }
     ) { padding ->
-        if (!uiState.isBrokerConnected) {
-            EmptyStateView(
-                modifier = Modifier.padding(padding),
-                message = "Not connected to MQTT broker",
-                icon = Icons.Default.Warning,  // Changed
-                actionText = "Configure",
-                onAction = onNavigateToSettings
-            )
-        } else if (uiState.devices.isEmpty()) {
-            EmptyStateView(
-                modifier = Modifier.padding(padding),
-                message = "No Shelly devices found\n\nMake sure devices are:\n• Powered on\n• Connected to WiFi\n• MQTT configured",
-                icon = Icons.Default.Star  // Changed
-            )
-        } else {
-            DeviceList(
-                modifier = Modifier.padding(padding),
-                devices = uiState.devices,
-                onToggleSwitch = { viewModel.toggleSwitch(it) },
-                onConnectDevice = { viewModel.connectDevice(it.deviceId) },
-                onDeleteDevice = { viewModel.deleteDevice(it.deviceId) }
-            )
+        when {
+            uiState.isConnecting -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Connecting to broker...",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            !uiState.isBrokerConnected -> {
+                EmptyStateView(
+                    modifier = Modifier.padding(padding),
+                    message = "Not connected to MQTT broker",
+                    icon = Icons.Default.Warning,
+                    actionText = "Configure",
+                    onAction = onNavigateToSettings
+                )
+            }
+            uiState.devices.isEmpty() -> {
+                EmptyStateView(
+                    modifier = Modifier.padding(padding),
+                    message = "No Shelly devices found\n\nMake sure devices are:\n• Powered on\n• Connected to WiFi\n• MQTT configured",
+                    icon = Icons.Default.Star
+                )
+            }
+            else -> {
+                DeviceList(
+                    modifier = Modifier.padding(padding),
+                    devices = uiState.devices,
+                    onToggleSwitch = { viewModel.toggleSwitch(it) },
+                    onConnectDevice = { viewModel.connectDevice(it.deviceId) },
+                    onDeleteDevice = { viewModel.deleteDevice(it.deviceId) }
+                )
+            }
         }
     }
 }
@@ -101,7 +132,6 @@ private fun DeviceList(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeviceCard(
     device: ShellyDeviceUiState,

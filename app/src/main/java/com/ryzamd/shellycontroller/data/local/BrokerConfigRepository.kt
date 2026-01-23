@@ -28,11 +28,11 @@ class BrokerConfigRepository @Inject constructor(@ApplicationContext private val
 
     val brokerConfig: Flow<BrokerConfig> = context.dataStore.data.map { prefs ->
         BrokerConfig(
-            host = prefs[Keys.HOST] ?: "192.168.22.111",
+            host = prefs[Keys.HOST] ?: "",
             port = prefs[Keys.PORT] ?: 1883,
-            username = prefs[Keys.USER] ?: "ryzamdapp2026",
-            password = prefs[Keys.PASS] ?: "ryzamd2026",
-            deviceId = prefs[Keys.DEVICE_ID] ?: "shellyplus1-default",
+            username = prefs[Keys.USER] ?: "",
+            password = prefs[Keys.PASS] ?: "",
+            deviceId = prefs[Keys.DEVICE_ID] ?: "",
             clientId = prefs[Keys.CLIENT_ID] ?: "android_app"
         )
     }

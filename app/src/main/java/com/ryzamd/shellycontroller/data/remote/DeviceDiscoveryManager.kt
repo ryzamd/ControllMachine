@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +40,8 @@ class DeviceDiscoveryManager @Inject constructor() {
     companion object {
         private const val TAG = "DeviceDiscovery"
     }
+    
+    private val discoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun startDiscovery(client: Mqtt5AsyncClient) {
         Log.d(TAG, "Starting device discovery...")
@@ -49,7 +54,7 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/online", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/online")
+                    Log.d(TAG, "Subscribed to +/online")
                 }
             }
         
@@ -61,7 +66,7 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/status/switch:0", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/status/switch:0")
+                    Log.d(TAG, "Subscribed to +/status/switch:0")
                 }
             }
         
@@ -73,50 +78,56 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/events/rpc", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/events/rpc")
+                    Log.d(TAG, "Subscribed to +/events/rpc")
                 }
             }
     }
 
     private fun handleOnlineMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val payload = String(publish.payloadAsBytes)
-        
-        val deviceId = topic.substringBefore("/online")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            val isOnline = payload.trim().equals("true", ignoreCase = true)
-            updateDevice(deviceId, isOnline)
-            Log.d(TAG, "Device ${if (isOnline) "ONLINE" else "OFFLINE"}: $deviceId")
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val payload = String(publish.payloadAsBytes)
+            
+            val deviceId = topic.substringBefore("/online")
+            
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                val isOnline = payload.trim().equals("true", ignoreCase = true)
+                updateDevice(deviceId, isOnline)
+                Log.d(TAG, "Device ${if (isOnline) "ONLINE" else "OFFLINE"}: $deviceId")
+            }
         }
     }
 
     private fun handleStatusMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val payload = String(publish.payloadAsBytes)
-        
-        val deviceId = topic.substringBefore("/status")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            updateDevice(deviceId, true)
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val payload = String(publish.payloadAsBytes)
             
-            val isOn = payload.contains("\"output\":true", ignoreCase = true)
+            val deviceId = topic.substringBefore("/status")
             
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                updateDevice(deviceId, true)
+                
+                val isOn = payload.contains("\"output\":true", ignoreCase = true)
                 _deviceStatusUpdates.emit(value = DeviceStatusUpdate(deviceId, isOn))
+                
+                Log.d(TAG, "Status update: $deviceId -> ${if (isOn) "ON" else "OFF"}")
             }
-            
-            Log.d(TAG, "Status update: $deviceId -> ${if (isOn) "ON" else "OFF"}")
         }
     }
 
     private fun handleEventMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val deviceId = topic.substringBefore("/events")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            updateDevice(deviceId, true)
-            Log.d(TAG, "Event received from: $deviceId")
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val deviceId = topic.substringBefore("/events")
+            
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                updateDevice(deviceId, true)
+                Log.d(TAG, "Event received from: $deviceId")
+            }
         }
     }
 
@@ -134,14 +145,6 @@ class DeviceDiscoveryManager @Inject constructor() {
         return deviceId.startsWith("shelly", ignoreCase = true) && 
                deviceId.contains("-") &&
                deviceId.length > 10
-    }
-
-    fun getKnownDevices(): Map<String, DiscoveredDevice> {
-        return _discoveredDevices.value
-    }
-
-    fun isDeviceOnline(deviceId: String): Boolean {
-        return _discoveredDevices.value[deviceId]?.isOnline ?: false
     }
 
     fun clearDevices() {

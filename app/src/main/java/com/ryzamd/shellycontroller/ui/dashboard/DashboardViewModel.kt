@@ -11,8 +11,10 @@ import com.ryzamd.shellycontroller.data.remote.MqttConnectionState
 import com.ryzamd.shellycontroller.data.remote.MqttManager
 import com.ryzamd.shellycontroller.repository.ShellyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ShellyDeviceUiState(
@@ -26,9 +28,11 @@ data class ShellyDeviceUiState(
 
 data class DashboardUiState(
     val isBrokerConnected: Boolean = false,
+    val isConnecting: Boolean = true,
     val devices: List<ShellyDeviceUiState> = emptyList(),
     val isScanning: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val connectionError: String? = null
 )
 
 @HiltViewModel
@@ -44,15 +48,28 @@ class DashboardViewModel @Inject constructor(
     private val discoveredDevicesFlow = discoveryManager.discoveredDevices
     private val _switchStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     private val _connectingDevices = MutableStateFlow<Set<String>>(emptySet())
+    private val _connectionError = MutableStateFlow<String?>(null)
     private val connectionState = mqttManager.connectionState
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val uiState: StateFlow<DashboardUiState> = combine(
         connectionState,
         savedDevicesFlow,
-        discoveredDevicesFlow,
+        discoveredDevicesFlow.debounce(100),
         _switchStates,
-        _connectingDevices
-    ) { brokerConnected, savedList, discoveredMap, switchStates, connectingSet ->
+        _connectingDevices,
+        _connectionError
+    ) { values ->
+        val brokerConnected = values[0] as MqttConnectionState
+        @Suppress("UNCHECKED_CAST")
+        val savedList = values[1] as List<SavedDevice>
+        @Suppress("UNCHECKED_CAST")
+        val discoveredMap = values[2] as Map<String, com.ryzamd.shellycontroller.data.remote.DiscoveredDevice>
+        @Suppress("UNCHECKED_CAST")
+        val switchStates = values[3] as Map<String, Boolean>
+        @Suppress("UNCHECKED_CAST")
+        val connectingSet = values[4] as Set<String>
+        val connectionError = values[5] as String?
 
         val mergedDevices = mergeDeviceLists(
             savedList = savedList,
@@ -63,8 +80,10 @@ class DashboardViewModel @Inject constructor(
 
         DashboardUiState(
             isBrokerConnected = brokerConnected == MqttConnectionState.CONNECTED,
+            isConnecting = brokerConnected == MqttConnectionState.CONNECTING,
             devices = mergedDevices,
-            isScanning = false
+            isScanning = false,
+            connectionError = connectionError
         )
     }.stateIn(
         scope = viewModelScope,
@@ -137,9 +156,9 @@ class DashboardViewModel @Inject constructor(
     private fun observeDeviceStatusUpdates() {
         viewModelScope.launch {
             discoveryManager.deviceStatusUpdates.collect { update ->
-                val currentStates = _switchStates.value.toMutableMap()
-                currentStates[update.deviceId] = update.isOn
-                _switchStates.value = currentStates
+                _switchStates.update { currentStates ->
+                    currentStates + (update.deviceId to update.isOn)
+                }
             }
         }
     }
@@ -161,9 +180,9 @@ class DashboardViewModel @Inject constructor(
                 )
 
                 result.onSuccess {
-                    val currentStates = _switchStates.value.toMutableMap()
-                    currentStates[device.deviceId] = newState
-                    _switchStates.value = currentStates
+                    _switchStates.update { currentStates ->
+                        currentStates + (device.deviceId to newState)
+                    }
                     Log.d("DashboardViewModel", "Updated state to $newState")
                 }
             } catch (e: Exception) {
@@ -173,34 +192,38 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun connectDevice(deviceId: String) {
-        Log.d("DashboardViewModel", "🔵 connectDevice called for: $deviceId")
+        Log.d("DashboardViewModel", "connectDevice called for: $deviceId")
         viewModelScope.launch {
-            _connectingDevices.value += _connectingDevices.value + deviceId
+            _connectingDevices.update { it + deviceId }
 
             try {
                 Log.d("DashboardViewModel", "📡 Calling getSwitchStatus...")
                 val status = shellyRepository.getSwitchStatus(deviceId, 0)
 
                 status.onSuccess { isOn ->
-                    Log.d("DashboardViewModel", "✅ Got status: $isOn")
+                    Log.d("DashboardViewModel", "Got status: $isOn")
                     val displayName = extractDeviceModel(deviceId)
-                    savedDeviceDao.insertDevice(
-                        SavedDevice(
-                            deviceId = deviceId,
-                            displayName = displayName
+                    
+                    // Run database operation on IO dispatcher
+                    withContext(Dispatchers.IO) {
+                        savedDeviceDao.insertDevice(
+                            SavedDevice(
+                                deviceId = deviceId,
+                                displayName = displayName
+                            )
                         )
-                    )
+                    }
 
-                    val currentStates = _switchStates.value.toMutableMap()
-                    currentStates[deviceId] = isOn
-                    _switchStates.value = currentStates
+                    _switchStates.update { currentStates ->
+                        currentStates + (deviceId to isOn)
+                    }
                 }.onFailure { e ->
-                    Log.e("DashboardViewModel", "❌ Failed: ${e.message}", e)
+                    Log.e("DashboardViewModel", "Failed: ${e.message}", e)
                 }
             } catch (e: Exception) {
-                Log.e("DashboardViewModel", "💥 Exception: ${e.message}", e)
+                Log.e("DashboardViewModel", "Exception: ${e.message}", e)
             } finally {
-                _connectingDevices.value += _connectingDevices.value - deviceId
+                _connectingDevices.update { it - deviceId }
             }
         }
     }
@@ -218,17 +241,26 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshDiscovery() {
-        discoveryManager.clearDevices()
+        viewModelScope.launch {
+            try {
+                mqttManager.reconnect()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Reconnect failed", e)
+            }
+        }
     }
 
     private fun connectToBroker() {
         viewModelScope.launch {
-            configRepo.brokerConfig.collectLatest { config ->
-                try {
+            try {
+                val config = configRepo.brokerConfig.first()
+                if (mqttManager.connectionState.value != MqttConnectionState.CONNECTED) {
                     mqttManager.connect(config)
-                } catch (e: Exception) {
-                    // Handle connection error
+                    _connectionError.value = null
                 }
+            } catch (e: Exception) {
+                _connectionError.value = e.message ?: "Connection failed"
+                Log.e("DashboardViewModel", "Connection failed", e)
             }
         }
     }

@@ -2,8 +2,8 @@ package com.ryzamd.shellycontroller.repository
 
 import com.ryzamd.shellycontroller.data.remote.MqttManager
 import com.ryzamd.shellycontroller.data.remote.models.SwitchSetParams
-import com.ryzamd.shellycontroller.data.remote.models.SwitchSetResult
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,7 +21,7 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
             val response = mqttManager.sendRpcCommand(
                 deviceId = deviceId,
                 method = "Switch.Set",
-                params = params
+                params = json.encodeToJsonElement(params)
             )
 
             if (response.error != null) {
@@ -40,32 +40,14 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
             val response = mqttManager.sendRpcCommand(
                 deviceId = deviceId,
                 method = "Switch.GetStatus",
-                params = params
+                params = json.encodeToJsonElement(params)
             )
 
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
             } else {
-                val output = response.result?.toString()?.contains("\"output\":true") ?: false
-                Result.success(output)
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    suspend fun getDeviceInfo(deviceId: String): Result<String> {
-        return try {
-            val response = mqttManager.sendRpcCommand<Map<String, Any>>(
-                deviceId = deviceId,
-                method = "Shelly.GetDeviceInfo",
-                params = null
-            )
-
-            if (response.error != null) {
-                Result.failure(Exception(response.error.message))
-            } else {
-                Result.success(response.result?.toString() ?: "")
+                val isOn = response.result?.toString()?.contains("\"output\":true", ignoreCase = true) ?: false
+                Result.success(isOn)
             }
         } catch (e: Exception) {
             Result.failure(e)
