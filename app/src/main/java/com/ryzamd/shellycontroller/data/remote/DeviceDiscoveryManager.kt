@@ -84,44 +84,50 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun handleOnlineMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val payload = String(publish.payloadAsBytes)
-        
-        val deviceId = topic.substringBefore("/online")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            val isOnline = payload.trim().equals("true", ignoreCase = true)
-            updateDevice(deviceId, isOnline)
-            Log.d(TAG, "Device ${if (isOnline) "ONLINE" else "OFFLINE"}: $deviceId")
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val payload = String(publish.payloadAsBytes)
+            
+            val deviceId = topic.substringBefore("/online")
+            
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                val isOnline = payload.trim().equals("true", ignoreCase = true)
+                updateDevice(deviceId, isOnline)
+                Log.d(TAG, "Device ${if (isOnline) "ONLINE" else "OFFLINE"}: $deviceId")
+            }
         }
     }
 
     private fun handleStatusMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val payload = String(publish.payloadAsBytes)
-        
-        val deviceId = topic.substringBefore("/status")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            updateDevice(deviceId, true)
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val payload = String(publish.payloadAsBytes)
             
-            val isOn = payload.contains("\"output\":true", ignoreCase = true)
+            val deviceId = topic.substringBefore("/status")
             
-            discoveryScope.launch {
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                updateDevice(deviceId, true)
+                
+                val isOn = payload.contains("\"output\":true", ignoreCase = true)
                 _deviceStatusUpdates.emit(value = DeviceStatusUpdate(deviceId, isOn))
+                
+                Log.d(TAG, "Status update: $deviceId -> ${if (isOn) "ON" else "OFF"}")
             }
-            
-            Log.d(TAG, "Status update: $deviceId -> ${if (isOn) "ON" else "OFF"}")
         }
     }
 
     private fun handleEventMessage(publish: Mqtt5Publish) {
-        val topic = publish.topic.toString()
-        val deviceId = topic.substringBefore("/events")
-        
-        if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
-            updateDevice(deviceId, true)
-            Log.d(TAG, "Event received from: $deviceId")
+        // Move processing off main thread to avoid skipped frames
+        discoveryScope.launch {
+            val topic = publish.topic.toString()
+            val deviceId = topic.substringBefore("/events")
+            
+            if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
+                updateDevice(deviceId, true)
+                Log.d(TAG, "Event received from: $deviceId")
+            }
         }
     }
 

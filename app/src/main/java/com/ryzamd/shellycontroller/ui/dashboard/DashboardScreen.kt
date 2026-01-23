@@ -61,7 +61,6 @@ fun DashboardScreen(
     ) { padding ->
         when {
             uiState.isConnecting -> {
-                // Show loading while connecting
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

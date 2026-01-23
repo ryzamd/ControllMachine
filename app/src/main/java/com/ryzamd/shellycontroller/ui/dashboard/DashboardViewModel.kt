@@ -11,8 +11,10 @@ import com.ryzamd.shellycontroller.data.remote.MqttConnectionState
 import com.ryzamd.shellycontroller.data.remote.MqttManager
 import com.ryzamd.shellycontroller.repository.ShellyRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ShellyDeviceUiState(
@@ -49,10 +51,11 @@ class DashboardViewModel @Inject constructor(
     private val _connectionError = MutableStateFlow<String?>(null)
     private val connectionState = mqttManager.connectionState
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val uiState: StateFlow<DashboardUiState> = combine(
         connectionState,
         savedDevicesFlow,
-        discoveredDevicesFlow,
+        discoveredDevicesFlow.debounce(100),
         _switchStates,
         _connectingDevices,
         _connectionError
@@ -200,12 +203,16 @@ class DashboardViewModel @Inject constructor(
                 status.onSuccess { isOn ->
                     Log.d("DashboardViewModel", "Got status: $isOn")
                     val displayName = extractDeviceModel(deviceId)
-                    savedDeviceDao.insertDevice(
-                        SavedDevice(
-                            deviceId = deviceId,
-                            displayName = displayName
+                    
+                    // Run database operation on IO dispatcher
+                    withContext(Dispatchers.IO) {
+                        savedDeviceDao.insertDevice(
+                            SavedDevice(
+                                deviceId = deviceId,
+                                displayName = displayName
+                            )
                         )
-                    )
+                    }
 
                     _switchStates.update { currentStates ->
                         currentStates + (deviceId to isOn)

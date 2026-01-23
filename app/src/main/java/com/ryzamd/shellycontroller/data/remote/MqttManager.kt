@@ -98,16 +98,19 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
     }
 
     private fun handleRpcResponse(publish: Mqtt5Publish) {
-        try {
-            val payload = String(publish.payloadAsBytes)
-            Log.d("MqttManager", "RPC Response: `$payload")
+        // Move JSON parsing off callback thread to avoid main thread blocking
+        managerScope.launch {
+            try {
+                val payload = String(publish.payloadAsBytes)
+                Log.d("MqttManager", "RPC Response: `$payload")
 
-            val response = json.decodeFromString<JsonRpcResponse<JsonElement>>(payload)
+                val response = json.decodeFromString<JsonRpcResponse<JsonElement>>(payload)
 
-            pendingRequests[response.id]?.complete(response)
-            pendingRequests.remove(response.id)
-        } catch (e: Exception) {
-            Log.e("MqttManager", "Error handling RPC response", e)
+                pendingRequests[response.id]?.complete(response)
+                pendingRequests.remove(response.id)
+            } catch (e: Exception) {
+                Log.e("MqttManager", "Error handling RPC response", e)
+            }
         }
     }
 
