@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,11 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign.Companion.Center
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ryzamd.shellycontroller.ui.theme.SuccessGreen
-import com.ryzamd.shellycontroller.ui.theme.ErrorRed
-import com.ryzamd.shellycontroller.ui.theme.OfflineGray
+import com.ryzamd.shellycontroller.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,10 +34,9 @@ fun DashboardScreen(onNavigateToSettings: () -> Unit, viewModel: DashboardViewMo
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text("Shelly Controller")
-                        // Connection status indicator
+                        Text("Dash Board")
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -186,13 +185,13 @@ private fun DeviceCard(
                             when {
                                 !device.isOnline -> OfflineGray
                                 device.isSwitchOn -> SuccessGreen
-                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                else -> WarningOrange
                             }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Home,
+                        imageVector = Icons.Rounded.Place,
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(32.dp)
@@ -240,6 +239,7 @@ private fun DeviceCard(
                 }
             }
 
+            // Actions
             if (device.isSaved) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -248,7 +248,13 @@ private fun DeviceCard(
                     Switch(
                         checked = device.isSwitchOn,
                         onCheckedChange = { onToggleSwitch() },
-                        enabled = device.isOnline
+                        enabled = device.isOnline,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = SuccessGreen,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.outline
+                        )
                     )
 
                     Box {
