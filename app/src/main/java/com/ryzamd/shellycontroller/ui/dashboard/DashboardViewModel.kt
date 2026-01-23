@@ -1,5 +1,6 @@
 ﻿package com.ryzamd.shellycontroller.ui.dashboard
 
+import android.content.ContentValues.TAG
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -159,6 +160,7 @@ class DashboardViewModel @Inject constructor(
                 _switchStates.update { currentStates ->
                     currentStates + (update.deviceId to update.isOn)
                 }
+                Log.d(TAG, "Real-time update: ${update.deviceId} -> ${update.isOn}")
             }
         }
     }
@@ -231,6 +233,7 @@ class DashboardViewModel @Inject constructor(
     fun deleteDevice(deviceId: String) {
         viewModelScope.launch {
             savedDeviceDao.deleteDeviceById(deviceId)
+            _switchStates.update { it - deviceId }
         }
     }
 
@@ -244,6 +247,7 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mqttManager.reconnect()
+                syncSavedDevicesState()
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Reconnect failed", e)
             }
@@ -258,9 +262,36 @@ class DashboardViewModel @Inject constructor(
                     mqttManager.connect(config)
                     _connectionError.value = null
                 }
+
+                mqttManager.connectionState
+                    .filter { it == MqttConnectionState.CONNECTED }
+                    .take(1)
+                    .collect {
+                        syncSavedDevicesState()
+                    }
             } catch (e: Exception) {
                 _connectionError.value = e.message ?: "Connection failed"
                 Log.e("DashboardViewModel", "Connection failed", e)
+            }
+        }
+    }
+
+    private fun syncSavedDevicesState() {
+        viewModelScope.launch {
+            Log.d(TAG, "Syncing saved devices state from broker...")
+
+            savedDevicesFlow.first().forEach { device ->
+                try {
+                    val status = shellyRepository.getSwitchStatus(device.deviceId, 0)
+                    status.onSuccess { isOn ->
+                        _switchStates.update { it + (device.deviceId to isOn) }
+                        Log.d(TAG, "Synced ${device.deviceId}: $isOn")
+                    }.onFailure { e ->
+                        Log.w(TAG, "Failed to sync ${device.deviceId}: ${e.message}")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Exception syncing ${device.deviceId}", e)
+                }
             }
         }
     }

@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,35 +18,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign.Companion.Center
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ryzamd.shellycontroller.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DashboardScreen(
-    onNavigateToSettings: () -> Unit,
-    viewModel: DashboardViewModel = hiltViewModel()
-) {
+fun DashboardScreen(onNavigateToSettings: () -> Unit, viewModel: DashboardViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
-                    Column {
-                        Text("Shelly Controller")
-                        Text(
-                            text = when {
-                                uiState.isConnecting -> "Connecting..."
-                                uiState.isBrokerConnected -> "Connected"
-                                else -> "Disconnected"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = when {
-                                uiState.isConnecting -> MaterialTheme.colorScheme.tertiary
-                                uiState.isBrokerConnected -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.error
-                            }
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Dash Board")
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        uiState.isConnecting -> MaterialTheme.colorScheme.tertiary
+                                        uiState.isBrokerConnected -> SuccessGreen
+                                        else -> ErrorRed
+                                    }
+                                )
                         )
                     }
                 },
@@ -55,7 +58,11 @@ fun DashboardScreen(
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(Icons.Default.Settings, "Settings")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         }
     ) { padding ->
@@ -102,6 +109,9 @@ fun DashboardScreen(
                     devices = uiState.devices,
                     onToggleSwitch = { viewModel.toggleSwitch(it) },
                     onConnectDevice = { viewModel.connectDevice(it.deviceId) },
+                    onRenameDevice = { deviceId, newName ->
+                        viewModel.renameDevice(deviceId, newName)
+                    },
                     onDeleteDevice = { viewModel.deleteDevice(it.deviceId) }
                 )
             }
@@ -115,6 +125,7 @@ private fun DeviceList(
     devices: List<ShellyDeviceUiState>,
     onToggleSwitch: (ShellyDeviceUiState) -> Unit,
     onConnectDevice: (ShellyDeviceUiState) -> Unit,
+    onRenameDevice: (String, String) -> Unit,
     onDeleteDevice: (ShellyDeviceUiState) -> Unit
 ) {
     LazyColumn(
@@ -126,6 +137,7 @@ private fun DeviceList(
                 device = device,
                 onToggleSwitch = { onToggleSwitch(device) },
                 onConnect = { onConnectDevice(device) },
+                onRename = { newName -> onRenameDevice(device.deviceId, newName) },
                 onDelete = { onDeleteDevice(device) }
             )
         }
@@ -137,21 +149,27 @@ private fun DeviceCard(
     device: ShellyDeviceUiState,
     onToggleSwitch: () -> Unit,
     onConnect: () -> Unit,
+    onRename: (String) -> Unit,
     onDelete: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (device.isSaved) 
-                MaterialTheme.colorScheme.surfaceVariant 
-            else 
+            containerColor = if (device.isSaved)
+                MaterialTheme.colorScheme.surface
+            else
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -161,42 +179,45 @@ private fun DeviceCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             when {
-                                !device.isOnline -> Color.Gray
-                                device.isSwitchOn -> Color(0xFF4CAF50)
-                                else -> Color(0xFFFF9800)
+                                !device.isOnline -> OfflineGray
+                                device.isSwitchOn -> SuccessGreen
+                                else -> WarningOrange
                             }
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.AddCircle,  // Changed
+                        imageVector = Icons.Rounded.Place,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(16.dp))
 
                 Column {
                     Text(
                         text = device.displayName,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.SemiBold
                     )
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = if (device.isOnline) Icons.Default.CheckCircle else Icons.Default.Clear,  // Changed
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = if (device.isOnline) Color(0xFF4CAF50) else Color.Red
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (device.isOnline) SuccessGreen else ErrorRed
+                                )
                         )
                         Text(
                             text = when {
@@ -209,6 +230,7 @@ private fun DeviceCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
                     Text(
                         text = device.deviceId,
                         style = MaterialTheme.typography.labelSmall,
@@ -217,6 +239,7 @@ private fun DeviceCard(
                 }
             }
 
+            // Actions
             if (device.isSaved) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -225,9 +248,15 @@ private fun DeviceCard(
                     Switch(
                         checked = device.isSwitchOn,
                         onCheckedChange = { onToggleSwitch() },
-                        enabled = device.isOnline
+                        enabled = device.isOnline,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = SuccessGreen,
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.outline
+                        )
                     )
-                    
+
                     Box {
                         IconButton(onClick = { showMenu = true }) {
                             Icon(Icons.Default.MoreVert, "Menu")
@@ -236,6 +265,16 @@ private fun DeviceCard(
                             expanded = showMenu,
                             onDismissRequest = { showMenu = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = {
+                                    showRenameDialog = true
+                                    showMenu = false
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Edit, null)
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Delete") },
                                 onClick = {
@@ -258,9 +297,14 @@ private fun DeviceCard(
                 } else {
                     FilledTonalButton(
                         onClick = onConnect,
-                        enabled = device.isOnline
+                        enabled = device.isOnline,
+                        shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(18.dp))  // Changed
+                        Icon(
+                            Icons.Default.AddCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Connect")
                     }
@@ -268,6 +312,48 @@ private fun DeviceCard(
             }
         }
     }
+
+    if (showRenameDialog) {
+        RenameDeviceDialog(
+            currentName = device.displayName,
+            onDismiss = { showRenameDialog = false },
+            onConfirm = { newName ->
+                onRename(newName)
+                showRenameDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun RenameDeviceDialog(currentName: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var newName by remember { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Device") },
+        text = {
+            OutlinedTextField(
+                value = newName,
+                onValueChange = { newName = it },
+                label = { Text("Device Name") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(newName) },
+                enabled = newName.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -284,7 +370,8 @@ private fun EmptyStateView(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(32.dp)
         ) {
             Icon(
                 imageVector = icon,
