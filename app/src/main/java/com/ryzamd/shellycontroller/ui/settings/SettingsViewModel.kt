@@ -20,9 +20,7 @@ data class SettingsUiState(
 )
 
 @HiltViewModel
-class SettingsViewModel @Inject constructor(
-    private val configRepo: BrokerConfigRepository
-) : ViewModel() {
+class SettingsViewModel @Inject constructor(private val configRepo: BrokerConfigRepository) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -60,12 +58,6 @@ class SettingsViewModel @Inject constructor(
     fun updatePassword(password: String) {
         _uiState.value = _uiState.value.copy(
             config = _uiState.value.config.copy(password = password)
-        )
-    }
-
-    fun updateDeviceId(deviceId: String) {
-        _uiState.value = _uiState.value.copy(
-            config = _uiState.value.config.copy(deviceId = deviceId)
         )
     }
 

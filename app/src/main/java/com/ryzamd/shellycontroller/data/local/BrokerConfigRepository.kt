@@ -22,7 +22,6 @@ class BrokerConfigRepository @Inject constructor(@ApplicationContext private val
         val PORT = intPreferencesKey("broker_port")
         val USER = stringPreferencesKey("username")
         val PASS = stringPreferencesKey("password")
-        val DEVICE_ID = stringPreferencesKey("device_id")
         val CLIENT_ID = stringPreferencesKey("client_id")
     }
 
@@ -32,7 +31,6 @@ class BrokerConfigRepository @Inject constructor(@ApplicationContext private val
             port = prefs[Keys.PORT] ?: 1883,
             username = prefs[Keys.USER] ?: "",
             password = prefs[Keys.PASS] ?: "",
-            deviceId = prefs[Keys.DEVICE_ID] ?: "",
             clientId = prefs[Keys.CLIENT_ID] ?: "android_app"
         )
     }
@@ -43,7 +41,6 @@ class BrokerConfigRepository @Inject constructor(@ApplicationContext private val
             prefs[Keys.PORT] = newConfig.port
             prefs[Keys.USER] = newConfig.username
             prefs[Keys.PASS] = newConfig.password
-            prefs[Keys.DEVICE_ID] = newConfig.deviceId
             prefs[Keys.CLIENT_ID] = newConfig.clientId
         }
     }

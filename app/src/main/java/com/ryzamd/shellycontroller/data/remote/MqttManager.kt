@@ -23,6 +23,7 @@ import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 
 enum class MqttConnectionState {

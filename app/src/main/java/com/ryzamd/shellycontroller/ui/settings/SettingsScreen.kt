@@ -99,29 +99,14 @@ fun SettingsScreen(
                 singleLine = true
             )
 
-            HorizontalDivider()
-
-            Text(
-                text = "Shelly Device Configuration",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            OutlinedTextField(
-                value = uiState.config.deviceId,
-                onValueChange = { viewModel.updateDeviceId(it) },
-                label = { Text("Device ID") },
-                placeholder = { Text("e.g. shellyplus1-a1b2c3") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
             OutlinedTextField(
                 value = uiState.config.clientId,
                 onValueChange = { viewModel.updateClientId(it) },
                 label = { Text("Client ID") },
                 placeholder = { Text("android_app") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                supportingText = { Text("Unique identifier for this app on MQTT broker") }
             )
 
             uiState.error?.let { error ->
