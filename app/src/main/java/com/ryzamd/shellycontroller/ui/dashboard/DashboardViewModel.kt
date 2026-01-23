@@ -26,6 +26,7 @@ data class ShellyDeviceUiState(
 
 data class DashboardUiState(
     val isBrokerConnected: Boolean = false,
+    val isConnecting: Boolean = true,
     val devices: List<ShellyDeviceUiState> = emptyList(),
     val isScanning: Boolean = false,
     val error: String? = null,
@@ -76,6 +77,7 @@ class DashboardViewModel @Inject constructor(
 
         DashboardUiState(
             isBrokerConnected = brokerConnected == MqttConnectionState.CONNECTED,
+            isConnecting = brokerConnected == MqttConnectionState.CONNECTING,
             devices = mergedDevices,
             isScanning = false,
             connectionError = connectionError
@@ -232,7 +234,13 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun refreshDiscovery() {
-        discoveryManager.clearDevices()
+        viewModelScope.launch {
+            try {
+                mqttManager.reconnect()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Reconnect failed", e)
+            }
+        }
     }
 
     private fun connectToBroker() {

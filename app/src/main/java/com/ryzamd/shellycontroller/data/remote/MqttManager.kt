@@ -152,4 +152,11 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
         _connectionState.value = MqttConnectionState.DISCONNECTED
         pendingRequests.clear()
     }
+
+    suspend fun reconnect() {
+        currentConfig?.let { config ->
+            disconnect()
+            connect(config)
+        }
+    }
 }
