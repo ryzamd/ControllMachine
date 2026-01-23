@@ -9,24 +9,21 @@ import com.ryzamd.shellycontroller.data.remote.models.JsonRpcRequest
 import com.ryzamd.shellycontroller.data.remote.models.JsonRpcResponse
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.cancelChildren
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class MqttConnectionState {
     DISCONNECTED, CONNECTING, CONNECTED, ERROR
@@ -35,21 +32,21 @@ enum class MqttConnectionState {
 @Singleton
 class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscoveryManager) {
 
-    var client: Mqtt5AsyncClient? = null
-    public val json = Json { ignoreUnknownKeys = true }
+    private var client: Mqtt5AsyncClient? = null
+    private val json = Json { ignoreUnknownKeys = true }
 
-    val pendingRequests = ConcurrentHashMap<Int, CompletableDeferred<JsonRpcResponse<JsonElement>>>()
+    private val pendingRequests = ConcurrentHashMap<Int, CompletableDeferred<JsonRpcResponse<JsonElement>>>()
 
     private val _connectionState = MutableStateFlow(MqttConnectionState.DISCONNECTED)
     val connectionState: StateFlow<MqttConnectionState> = _connectionState.asStateFlow()
 
-    private val _deviceNotifications = MutableSharedFlow<String>()
-    val deviceNotifications: SharedFlow<String> = _deviceNotifications.asSharedFlow()
-
     private var currentConfig: BrokerConfig? = null
-    public val clientId = "android_app_`${UUID.randomUUID()}"
-
-    val discoveredDevices = discoveryManager.discoveredDevices
+    private val clientId = "android_app_`${UUID.randomUUID()}"
+    
+    private val managerScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default
+    )
+    private val requestIdCounter = AtomicInteger(0)
 
     suspend fun connect(config: BrokerConfig) = suspendCancellableCoroutine { continuation ->
         try {
@@ -100,28 +97,6 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
         Log.d("MqttManager", "Subscribed to `$clientId/rpc")
     }
 
-    fun subscribeToDevice(deviceId: String) {
-        client?.subscribeWith()
-            ?.topicFilter("`$deviceId/events/rpc")
-            ?.callback { publish -> handleNotification(publish) }
-            ?.send()
-
-        client?.subscribeWith()
-            ?.topicFilter("`$deviceId/status/switch:0")
-            ?.callback { publish -> handleNotification(publish) }
-            ?.send()
-
-        client?.subscribeWith()
-            ?.topicFilter("$deviceId/online")
-            ?.callback { publish ->
-                val online = String(publish.payloadAsBytes)
-                Log.d("MqttManager", "Device `$deviceId online: `$online")
-            }
-            ?.send()
-
-        Log.d("MqttManager", "Subscribed to device: `$deviceId")
-    }
-
     private fun handleRpcResponse(publish: Mqtt5Publish) {
         try {
             val payload = String(publish.payloadAsBytes)
@@ -136,26 +111,8 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
         }
     }
 
-    private fun handleNotification(publish: Mqtt5Publish) {
-        try {
-            val payload = String(publish.payloadAsBytes)
-            Log.d("MqttManager", "Notification: `$payload")
-
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-                _deviceNotifications.emit(value = payload)
-            }
-        } catch (e: Exception) {
-            Log.e("MqttManager", "Error handling notification", e)
-        }
-    }
-
-    suspend inline fun <reified T> sendRpcCommand(
-        deviceId: String,
-        method: String,
-        params: T?,
-        timeout: Long = 5000
-    ): JsonRpcResponse<JsonElement> {
-        val requestId = (1..1000000).random()
+    suspend fun sendRpcCommand(deviceId: String, method: String, params: JsonElement?, timeout: Long = 5000): JsonRpcResponse<JsonElement> {
+        val requestId = requestIdCounter.incrementAndGet()
         val deferred = CompletableDeferred<JsonRpcResponse<JsonElement>>()
 
         pendingRequests[requestId] = deferred
@@ -164,7 +121,7 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
             id = requestId,
             src = clientId,
             method = method,
-            params = params?.let { json.encodeToJsonElement(it) }
+            params = params
         )
 
         val topic = "$deviceId/rpc"
@@ -189,6 +146,8 @@ class MqttManager @Inject constructor(private val discoveryManager: DeviceDiscov
     }
 
     fun disconnect() {
+        discoveryManager.clearDevices()
+        managerScope.coroutineContext.cancelChildren()
         client?.disconnect()
         _connectionState.value = MqttConnectionState.DISCONNECTED
         pendingRequests.clear()

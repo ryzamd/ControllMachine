@@ -1,4 +1,6 @@
-﻿package com.ryzamd.shellycontroller.ui.dashboard
+﻿@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.ryzamd.shellycontroller.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -101,7 +103,6 @@ private fun DeviceList(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeviceCard(
     device: ShellyDeviceUiState,

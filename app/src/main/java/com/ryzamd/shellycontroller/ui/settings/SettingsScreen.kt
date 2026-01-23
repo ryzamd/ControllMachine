@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
@@ -21,6 +22,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var passwordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) {
@@ -58,13 +60,13 @@ fun SettingsScreen(
                 value = uiState.config.host,
                 onValueChange = { viewModel.updateHost(it) },
                 label = { Text("Broker Host") },
-                placeholder = { Text("192.168.22.111") },
+                placeholder = { Text("e.g. 192.168.1.100") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
             OutlinedTextField(
-                value = uiState.config.port.toString(),
+                value = if (uiState.config.port == 0) "" else uiState.config.port.toString(),
                 onValueChange = { viewModel.updatePort(it) },
                 label = { Text("Port") },
                 placeholder = { Text("1883") },
@@ -77,6 +79,7 @@ fun SettingsScreen(
                 value = uiState.config.username,
                 onValueChange = { viewModel.updateUsername(it) },
                 label = { Text("Username") },
+                placeholder = { Text("Enter username") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -85,8 +88,14 @@ fun SettingsScreen(
                 value = uiState.config.password,
                 onValueChange = { viewModel.updatePassword(it) },
                 label = { Text("Password") },
+                placeholder = { Text("Enter password") },
                 modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Text(if (passwordVisible) "Hide" else "Show")
+                    }
+                },
                 singleLine = true
             )
 
@@ -101,7 +110,7 @@ fun SettingsScreen(
                 value = uiState.config.deviceId,
                 onValueChange = { viewModel.updateDeviceId(it) },
                 label = { Text("Device ID") },
-                placeholder = { Text("shellyplus1-xxxxxx") },
+                placeholder = { Text("e.g. shellyplus1-a1b2c3") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -134,7 +143,7 @@ fun SettingsScreen(
             Button(
                 onClick = { viewModel.saveConfig() },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isSaving
+                enabled = !uiState.isSaving && uiState.config.host.isNotBlank()
             ) {
                 if (uiState.isSaving) {
                     CircularProgressIndicator(

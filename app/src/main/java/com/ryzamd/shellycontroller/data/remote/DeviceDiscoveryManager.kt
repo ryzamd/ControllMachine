@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,6 +40,8 @@ class DeviceDiscoveryManager @Inject constructor() {
     companion object {
         private const val TAG = "DeviceDiscovery"
     }
+    
+    private val discoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun startDiscovery(client: Mqtt5AsyncClient) {
         Log.d(TAG, "Starting device discovery...")
@@ -49,7 +54,7 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/online", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/online")
+                    Log.d(TAG, "Subscribed to +/online")
                 }
             }
         
@@ -61,7 +66,7 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/status/switch:0", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/status/switch:0")
+                    Log.d(TAG, "Subscribed to +/status/switch:0")
                 }
             }
         
@@ -73,7 +78,7 @@ class DeviceDiscoveryManager @Inject constructor() {
                 if (error != null) {
                     Log.e(TAG, "Failed to subscribe +/events/rpc", error)
                 } else {
-                    Log.d(TAG, "✓ Subscribed to +/events/rpc")
+                    Log.d(TAG, "Subscribed to +/events/rpc")
                 }
             }
     }
@@ -102,7 +107,7 @@ class DeviceDiscoveryManager @Inject constructor() {
             
             val isOn = payload.contains("\"output\":true", ignoreCase = true)
             
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            discoveryScope.launch {
                 _deviceStatusUpdates.emit(value = DeviceStatusUpdate(deviceId, isOn))
             }
             
@@ -134,14 +139,6 @@ class DeviceDiscoveryManager @Inject constructor() {
         return deviceId.startsWith("shelly", ignoreCase = true) && 
                deviceId.contains("-") &&
                deviceId.length > 10
-    }
-
-    fun getKnownDevices(): Map<String, DiscoveredDevice> {
-        return _discoveredDevices.value
-    }
-
-    fun isDeviceOnline(deviceId: String): Boolean {
-        return _discoveredDevices.value[deviceId]?.isOnline ?: false
     }
 
     fun clearDevices() {
