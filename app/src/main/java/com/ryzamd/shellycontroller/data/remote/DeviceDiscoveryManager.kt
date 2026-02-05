@@ -142,9 +142,13 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun isValidShellyDevice(deviceId: String): Boolean {
-        return deviceId.startsWith("shelly", ignoreCase = true) && 
-               deviceId.contains("-") &&
-               deviceId.length > 10
+        val isLegacyShelly = deviceId.startsWith("shelly", ignoreCase = true) && 
+                             deviceId.contains("-") &&
+                             deviceId.length > 10
+                             
+        val isRccDevice = deviceId.startsWith("RCC-Device", ignoreCase = true)
+        
+        return isLegacyShelly || isRccDevice
     }
 
     fun clearDevices() {

@@ -44,8 +44,8 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideMqttManager(discoveryManager: DeviceDiscoveryManager): MqttManager {
-        return MqttManager(discoveryManager)
+    fun provideMqttManager(@ApplicationContext context: Context, discoveryManager: DeviceDiscoveryManager): MqttManager {
+        return MqttManager(context, discoveryManager)
     }
 
     @Provides

@@ -69,14 +69,27 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
                         style = MaterialTheme.typography.titleMedium
                     )
 
-                    OutlinedTextField(
-                        value = uiState.config.host,
-                        onValueChange = { viewModel.updateHost(it) },
-                        label = { Text("Broker Host") },
-                        placeholder = { Text("192.168.1.100") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    // Hardcoded Configuration Display
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Target Host: ${uiState.config.host}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Username: (Hidden)",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
 
                     OutlinedTextField(
                         value = if (uiState.config.port == 0) "" else uiState.config.port.toString(),
@@ -86,48 +99,6 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.config.username,
-                        onValueChange = { viewModel.updateUsername(it) },
-                        label = { Text("Username") },
-                        placeholder = { Text("mqtt_user") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.config.password,
-                        onValueChange = { viewModel.updatePassword(it) },
-                        label = { Text("Password") },
-                        placeholder = { Text("Enter password") },
-                        modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = if (passwordVisible)
-                            VisualTransformation.None
-                        else
-                            PasswordVisualTransformation(),
-                        trailingIcon = {
-                            TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Text(if (passwordVisible) "Hide" else "Show")
-                            }
-                        },
-                        singleLine = true
-                    )
-
-                    OutlinedTextField(
-                        value = uiState.config.clientId,
-                        onValueChange = { viewModel.updateClientId(it) },
-                        label = { Text("Client ID") },
-                        placeholder = { Text("android_app") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        supportingText = {
-                            Text(
-                                "Unique identifier for this app",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
                     )
                 }
             }
