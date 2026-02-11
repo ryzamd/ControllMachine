@@ -86,6 +86,12 @@ class SettingsViewModel @Inject constructor(private val configRepo: BrokerConfig
         }
     }
 
+    fun updateResolvedIp(ip: String) {
+        _uiState.value = _uiState.value.copy(
+            config = _uiState.value.config.copy(resolvedIp = ip.ifBlank { null })
+        )
+    }
+
     fun resetSaveSuccess() {
         _uiState.value = _uiState.value.copy(saveSuccess = false)
     }

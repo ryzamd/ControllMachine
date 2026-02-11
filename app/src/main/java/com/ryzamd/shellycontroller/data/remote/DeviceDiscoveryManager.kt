@@ -84,7 +84,6 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun handleOnlineMessage(publish: Mqtt5Publish) {
-        // Move processing off main thread to avoid skipped frames
         discoveryScope.launch {
             val topic = publish.topic.toString()
             val payload = String(publish.payloadAsBytes)
@@ -100,7 +99,6 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun handleStatusMessage(publish: Mqtt5Publish) {
-        // Move processing off main thread to avoid skipped frames
         discoveryScope.launch {
             val topic = publish.topic.toString()
             val payload = String(publish.payloadAsBytes)
@@ -119,7 +117,6 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun handleEventMessage(publish: Mqtt5Publish) {
-        // Move processing off main thread to avoid skipped frames
         discoveryScope.launch {
             val topic = publish.topic.toString()
             val deviceId = topic.substringBefore("/events")

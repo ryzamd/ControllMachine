@@ -11,18 +11,10 @@ import javax.inject.Singleton
 class ShellyRepository @Inject constructor(private val mqttManager: MqttManager) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun setSwitchState(
-        deviceId: String,
-        switchId: Int,
-        on: Boolean
-    ): Result<Boolean> {
+    suspend fun setSwitchState(deviceId: String, switchId: Int, on: Boolean): Result<Boolean> {
         return try {
             val params = SwitchSetParams(id = switchId, on = on)
-            val response = mqttManager.sendRpcCommand(
-                deviceId = deviceId,
-                method = "Switch.Set",
-                params = json.encodeToJsonElement(params)
-            )
+            val response = mqttManager.sendRpcCommand(deviceId, "Switch.Set", json.encodeToJsonElement(params))
 
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
@@ -37,11 +29,7 @@ class ShellyRepository @Inject constructor(private val mqttManager: MqttManager)
     suspend fun getSwitchStatus(deviceId: String, switchId: Int): Result<Boolean> {
         return try {
             val params = mapOf("id" to switchId)
-            val response = mqttManager.sendRpcCommand(
-                deviceId = deviceId,
-                method = "Switch.GetStatus",
-                params = json.encodeToJsonElement(params)
-            )
+            val response = mqttManager.sendRpcCommand(deviceId, "Switch.GetStatus", json.encodeToJsonElement(params))
 
             if (response.error != null) {
                 Result.failure(Exception(response.error.message))
