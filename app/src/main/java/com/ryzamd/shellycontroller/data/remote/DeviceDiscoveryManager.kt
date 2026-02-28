@@ -33,52 +33,52 @@ class DeviceDiscoveryManager @Inject constructor() {
 
     private val _discoveredDevices = MutableStateFlow<Map<String, DiscoveredDevice>>(emptyMap())
     val discoveredDevices: StateFlow<Map<String, DiscoveredDevice>> = _discoveredDevices.asStateFlow()
-    
+
     private val _deviceStatusUpdates = MutableSharedFlow<DeviceStatusUpdate>(replay = 0)
     val deviceStatusUpdates: SharedFlow<DeviceStatusUpdate> = _deviceStatusUpdates.asSharedFlow()
-    
+
     companion object {
         private const val TAG = "DeviceDiscovery"
     }
-    
+
     private val discoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     fun startDiscovery(client: Mqtt5AsyncClient) {
         Log.d(TAG, "Starting device discovery...")
-        
+
         client.subscribeWith()
-            .topicFilter("+/online")
+            .topicFilter("rcc/devices/+/status/online")
             .callback { publish -> handleOnlineMessage(publish) }
             .send()
             .whenComplete { _, error ->
                 if (error != null) {
-                    Log.e(TAG, "Failed to subscribe +/online", error)
+                    Log.e(TAG, "Failed to subscribe rcc/devices/+/status/online", error)
                 } else {
-                    Log.d(TAG, "Subscribed to +/online")
+                    Log.d(TAG, "Subscribed to rcc/devices/+/status/online")
                 }
             }
-        
+
         client.subscribeWith()
-            .topicFilter("+/status/switch:0")
+            .topicFilter("rcc/devices/+/status/switch:0")
             .callback { publish -> handleStatusMessage(publish) }
             .send()
             .whenComplete { _, error ->
                 if (error != null) {
-                    Log.e(TAG, "Failed to subscribe +/status/switch:0", error)
+                    Log.e(TAG, "Failed to subscribe rcc/devices/+/status/switch:0", error)
                 } else {
-                    Log.d(TAG, "Subscribed to +/status/switch:0")
+                    Log.d(TAG, "Subscribed to rcc/devices/+/status/switch:0")
                 }
             }
-        
+
         client.subscribeWith()
-            .topicFilter("+/events/rpc")
+            .topicFilter("rcc/devices/+/status/rpc")
             .callback { publish -> handleEventMessage(publish) }
             .send()
             .whenComplete { _, error ->
                 if (error != null) {
-                    Log.e(TAG, "Failed to subscribe +/events/rpc", error)
+                    Log.e(TAG, "Failed to subscribe rcc/devices/+/status/rpc", error)
                 } else {
-                    Log.d(TAG, "Subscribed to +/events/rpc")
+                    Log.d(TAG, "Subscribed to rcc/devices/+/status/rpc")
                 }
             }
     }
@@ -87,9 +87,9 @@ class DeviceDiscoveryManager @Inject constructor() {
         discoveryScope.launch {
             val topic = publish.topic.toString()
             val payload = String(publish.payloadAsBytes)
-            
-            val deviceId = topic.substringBefore("/online")
-            
+
+            val deviceId = topic.substringAfter("rcc/devices/").substringBefore("/status")
+
             if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
                 val isOnline = payload.trim().equals("true", ignoreCase = true)
                 updateDevice(deviceId, isOnline)
@@ -102,15 +102,15 @@ class DeviceDiscoveryManager @Inject constructor() {
         discoveryScope.launch {
             val topic = publish.topic.toString()
             val payload = String(publish.payloadAsBytes)
-            
-            val deviceId = topic.substringBefore("/status")
-            
+
+            val deviceId = topic.substringAfter("rcc/devices/").substringBefore("/status")
+
             if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
                 updateDevice(deviceId, true)
-                
+
                 val isOn = payload.contains("\"output\":true", ignoreCase = true)
                 _deviceStatusUpdates.emit(value = DeviceStatusUpdate(deviceId, isOn))
-                
+
                 Log.d(TAG, "Status update: $deviceId -> ${if (isOn) "ON" else "OFF"}")
             }
         }
@@ -119,8 +119,8 @@ class DeviceDiscoveryManager @Inject constructor() {
     private fun handleEventMessage(publish: Mqtt5Publish) {
         discoveryScope.launch {
             val topic = publish.topic.toString()
-            val deviceId = topic.substringBefore("/events")
-            
+            val deviceId = topic.substringAfter("rcc/devices/").substringBefore("/status")
+
             if (deviceId.isNotEmpty() && isValidShellyDevice(deviceId)) {
                 updateDevice(deviceId, true)
                 Log.d(TAG, "Event received from: $deviceId")
@@ -139,12 +139,12 @@ class DeviceDiscoveryManager @Inject constructor() {
     }
 
     private fun isValidShellyDevice(deviceId: String): Boolean {
-        val isLegacyShelly = deviceId.startsWith("shelly", ignoreCase = true) && 
-                             deviceId.contains("-") &&
-                             deviceId.length > 10
-                             
+        val isLegacyShelly = deviceId.startsWith("shelly", ignoreCase = true) &&
+                deviceId.contains("-") &&
+                deviceId.length > 10
+
         val isRccDevice = deviceId.startsWith("RCC-Device", ignoreCase = true)
-        
+
         return isLegacyShelly || isRccDevice
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ryzamd.shellycontroller.ui.theme.*
 
@@ -23,6 +24,7 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
         val uiState by viewModel.uiState.collectAsState()
         var tapCount by remember { mutableIntStateOf(0) }
         var showIpDialog by remember { mutableStateOf(false) }
+        var passwordVisible by remember { mutableStateOf(false) }
 
         LaunchedEffect(uiState.saveSuccess) {
                 if (uiState.saveSuccess) {
@@ -82,12 +84,12 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
                                                         ),
                                                 modifier =
                                                         Modifier.fillMaxWidth().clickable(
-                                                                        interactionSource =
-                                                                                remember {
-                                                                                        MutableInteractionSource()
-                                                                                },
-                                                                        indication = null
-                                                                ) {
+                                                                interactionSource =
+                                                                        remember {
+                                                                                MutableInteractionSource()
+                                                                        },
+                                                                indication = null
+                                                        ) {
                                                                 tapCount++
                                                                 if (tapCount >= 10) {
                                                                         showIpDialog = true
@@ -109,6 +111,21 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
                                                 }
                                         }
 
+                                        Row(
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                        Text("Use TLS", style = MaterialTheme.typography.bodyLarge)
+                                                        Text("Required for secure internet access", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                                androidx.compose.material3.Switch(
+                                                        checked = uiState.config.useTls,
+                                                        onCheckedChange = { viewModel.updateUseTls(it) }
+                                                )
+                                        }
+
                                         OutlinedTextField(
                                                 value =
                                                         if (uiState.config.port == 0) ""
@@ -121,6 +138,32 @@ fun SettingsScreen(onNavigateBack: () -> Unit, viewModel: SettingsViewModel = hi
                                                         KeyboardOptions(
                                                                 keyboardType = KeyboardType.Number
                                                         ),
+                                                readOnly = true,
+                                                singleLine = true
+                                        )
+
+                                        OutlinedTextField(
+                                                value = uiState.config.username,
+                                                onValueChange = { viewModel.updateUsername(it) },
+                                                label = { Text("Device Username") },
+                                                placeholder = { Text("DeviceRCC") },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                singleLine = true
+                                        )
+
+                                        OutlinedTextField(
+                                                value = uiState.config.password,
+                                                onValueChange = { viewModel.updatePassword(it) },
+                                                label = { Text("Device Password") },
+                                                placeholder = { Text("Enter password") },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                visualTransformation = if (passwordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                                trailingIcon = {
+                                                        TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                                                                Text(if (passwordVisible) "Hide" else "Show")
+                                                        }
+                                                },
                                                 singleLine = true
                                         )
                                 }

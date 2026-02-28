@@ -3,8 +3,9 @@ package com.ryzamd.shellycontroller.data.local
 data class BrokerConfig(
         val host: String = "RCCServer.local",
         val port: Int = 1883,
-        val username: String = "MobileRCC",
-        val password: String = "MobileRCC@#!",
+        val username: String = "",
+        val password: String = "",
         val clientId: String = "android_app",
-        val resolvedIp: String? = null
+        val resolvedIp: String? = null,
+        val useTls: Boolean = false
 )

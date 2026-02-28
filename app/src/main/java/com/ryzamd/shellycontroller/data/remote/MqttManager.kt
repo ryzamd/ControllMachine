@@ -11,6 +11,13 @@ import com.ryzamd.shellycontroller.data.local.BrokerConfigRepository
 import com.ryzamd.shellycontroller.data.remote.models.JsonRpcRequest
 import com.ryzamd.shellycontroller.data.remote.models.JsonRpcResponse
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+import javax.net.ssl.ManagerFactoryParameters
+import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.TrustManagerFactorySpi
+import javax.net.ssl.X509TrustManager
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -73,48 +80,48 @@ constructor(
         multicastLock.acquire()
 
         val newlyResolvedIp: String? =
-                try {
-                    withTimeout(5000) {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            val addresses = java.net.InetAddress.getAllByName(config.host)
-                            val ipv4 = addresses.firstOrNull { it is java.net.Inet4Address }
-                            ipv4?.hostAddress
-                        }
+            try {
+                withTimeout(5000) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val addresses = java.net.InetAddress.getAllByName(config.host)
+                        val ipv4 = addresses.firstOrNull { it is java.net.Inet4Address }
+                        ipv4?.hostAddress
                     }
-                } catch (e: Exception) {
-                    Log.d(
-                            "MqttManager",
-                            "Could not resolve hostname: ${config.host} - using cached IP"
-                    )
-                    null
                 }
+            } catch (e: Exception) {
+                Log.d(
+                    "MqttManager",
+                    "Could not resolve hostname: ${config.host} - using cached IP"
+                )
+                null
+            }
 
         val hostToConnect: String =
-                when {
-                    newlyResolvedIp != null && newlyResolvedIp != config.resolvedIp -> {
-                        Log.d(
-                                "MqttManager",
-                                "New IP resolved: $newlyResolvedIp (was: ${config.resolvedIp})"
-                        )
-                        brokerConfigRepository.updateResolvedIp(newlyResolvedIp)
-                        newlyResolvedIp
-                    }
-                    newlyResolvedIp != null -> {
-                        Log.d("MqttManager", "IP unchanged: $newlyResolvedIp")
-                        newlyResolvedIp
-                    }
-                    config.resolvedIp != null -> {
-                        Log.d("MqttManager", "Using cached IP: ${config.resolvedIp}")
-                        config.resolvedIp
-                    }
-                    else -> {
-                        Log.w(
-                                "MqttManager",
-                                "No IP available, falling back to hostname: ${config.host}"
-                        )
-                        config.host
-                    }
+            when {
+                newlyResolvedIp != null && newlyResolvedIp != config.resolvedIp -> {
+                    Log.d(
+                        "MqttManager",
+                        "New IP resolved: $newlyResolvedIp (was: ${config.resolvedIp})"
+                    )
+                    brokerConfigRepository.updateResolvedIp(newlyResolvedIp)
+                    newlyResolvedIp
                 }
+                newlyResolvedIp != null -> {
+                    Log.d("MqttManager", "IP unchanged: $newlyResolvedIp")
+                    newlyResolvedIp
+                }
+                config.resolvedIp != null -> {
+                    Log.d("MqttManager", "Using cached IP: ${config.resolvedIp}")
+                    config.resolvedIp
+                }
+                else -> {
+                    Log.w(
+                        "MqttManager",
+                        "No IP available, falling back to hostname: ${config.host}"
+                    )
+                    config.host
+                }
+            }
 
         Log.d("MqttManager", ">>> CONNECTING <<<")
         Log.d("MqttManager", "Hostname      : ${config.host}")
@@ -126,17 +133,39 @@ constructor(
 
         return suspendCancellableCoroutine { continuation ->
             try {
-                client = MqttClient.builder()
-                        .useMqttVersion5()
-                        .identifier(clientId)
-                        .serverHost(hostToConnect)
-                        .serverPort(config.port)
-                        .simpleAuth()
-                        .username(config.username)
-                        .password(config.password.toByteArray())
-                        .applySimpleAuth()
-                        .automaticReconnectWithDefaultConfig()
-                        .buildAsync()
+                val builder = MqttClient.builder()
+                    .useMqttVersion5()
+                    .identifier(clientId)
+                    .serverHost(hostToConnect)
+                    .serverPort(config.port)
+
+                if (config.useTls) {
+                    val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                        override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                        override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+                        override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                    })
+
+                    val mockTrustManagerFactory = object : TrustManagerFactory(
+                        object : TrustManagerFactorySpi() {
+                            override fun engineInit(ks: KeyStore?) {}
+                            override fun engineInit(spec: ManagerFactoryParameters?) {}
+                            override fun engineGetTrustManagers(): Array<TrustManager> = trustAllCerts
+                        }, null, "Insecure"
+                    ) {}
+
+                    builder.sslConfig()
+                        .trustManagerFactory(mockTrustManagerFactory)
+                        .hostnameVerifier { _, _ -> true }
+                        .applySslConfig()
+                }
+
+                client = builder.simpleAuth()
+                    .username(config.username)
+                    .password(config.password.toByteArray())
+                    .applySimpleAuth()
+                    .automaticReconnectWithDefaultConfig()
+                    .buildAsync()
 
                 client?.connect()?.whenComplete { _, throwable ->
                     if (throwable == null) {
@@ -162,9 +191,9 @@ constructor(
 
     private fun subscribeToTopics() {
         client?.subscribeWith()
-                ?.topicFilter("$clientId/rpc")
-                ?.callback { publish -> handleRpcResponse(publish) }
-                ?.send()
+            ?.topicFilter("$clientId/rpc")
+            ?.callback { publish -> handleRpcResponse(publish) }
+            ?.send()
 
         Log.d("MqttManager", "Subscribed to `$clientId/rpc")
     }
@@ -192,10 +221,10 @@ constructor(
         pendingRequests[requestId] = deferred
 
         val request = JsonRpcRequest(id = requestId, src = clientId, method = method, params = params)
-        val topic = "$deviceId/rpc"
+        val topic = "rcc/devices/$deviceId/command"
         val payload = json.encodeToString<JsonRpcRequest>(request).toByteArray()
 
-        Log.d("MqttManager", "Sending RPC: $method to $deviceId")
+        Log.d("MqttManager", "Sending RCC Command RPC: $method to $deviceId")
         Log.d("MqttManager", "Payload: ${String(payload)}")
 
         client?.publishWith()?.topic(topic)?.payload(payload)?.send()

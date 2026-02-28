@@ -84,6 +84,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.animation.core.lint)
     ksp(libs.androidx.room.compiler)
 
     // Hilt

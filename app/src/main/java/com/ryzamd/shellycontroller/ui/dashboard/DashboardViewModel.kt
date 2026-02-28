@@ -205,7 +205,7 @@ class DashboardViewModel @Inject constructor(
                 status.onSuccess { isOn ->
                     Log.d("DashboardViewModel", "Got status: $isOn")
                     val displayName = extractDeviceModel(deviceId)
-                    
+
                     // Run database operation on IO dispatcher
                     withContext(Dispatchers.IO) {
                         savedDeviceDao.insertDevice(
@@ -246,7 +246,8 @@ class DashboardViewModel @Inject constructor(
     fun refreshDiscovery() {
         viewModelScope.launch {
             try {
-                mqttManager.reconnect()
+                val config = configRepo.brokerConfig.first()
+                mqttManager.connect(config)
                 syncSavedDevicesState()
             } catch (e: Exception) {
                 Log.e("DashboardViewModel", "Reconnect failed", e)
@@ -256,22 +257,21 @@ class DashboardViewModel @Inject constructor(
 
     private fun connectToBroker() {
         viewModelScope.launch {
-            try {
-                val config = configRepo.brokerConfig.first()
-                if (mqttManager.connectionState.value != MqttConnectionState.CONNECTED) {
+            configRepo.brokerConfig.collectLatest { config ->
+                try {
                     mqttManager.connect(config)
                     _connectionError.value = null
-                }
 
-                mqttManager.connectionState
-                    .filter { it == MqttConnectionState.CONNECTED }
-                    .take(1)
-                    .collect {
-                        syncSavedDevicesState()
-                    }
-            } catch (e: Exception) {
-                _connectionError.value = e.message ?: "Connection failed"
-                Log.e("DashboardViewModel", "Connection failed", e)
+                    mqttManager.connectionState
+                        .filter { it == MqttConnectionState.CONNECTED }
+                        .take(1)
+                        .collect {
+                            syncSavedDevicesState()
+                        }
+                } catch (e: Exception) {
+                    _connectionError.value = e.message ?: "Connection failed"
+                    Log.e("DashboardViewModel", "Connection failed", e)
+                }
             }
         }
     }

@@ -67,6 +67,17 @@ class SettingsViewModel @Inject constructor(private val configRepo: BrokerConfig
         )
     }
 
+    fun updateUseTls(useTls: Boolean) {
+        val currentPort = _uiState.value.config.port
+        val newPort = if (useTls && currentPort == 1883) 8883
+        else if (!useTls && currentPort == 8883) 1883
+        else currentPort
+
+        _uiState.value = _uiState.value.copy(
+            config = _uiState.value.config.copy(useTls = useTls, port = newPort)
+        )
+    }
+
     fun saveConfig() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
